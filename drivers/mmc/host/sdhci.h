@@ -10,6 +10,11 @@
  * the Free Software Foundation; either version 2 of the License, or (at
  * your option) any later version.
  */
+/*
+ * NOTE: This file has been modified by Sony Mobile Communications Inc.
+ * Modifications are Copyright (c) 2016 Sony Mobile Communications Inc,
+ * and licensed under the license of the file.
+ */
 #ifndef __SDHCI_HW_H
 #define __SDHCI_HW_H
 

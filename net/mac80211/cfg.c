@@ -5,6 +5,11 @@
  *
  * This file is GPLv2 as found in COPYING.
  */
+/*
+ * NOTE: This file has been modified by Sony Mobile Communications Inc.
+ * Modifications are Copyright (c) 2015 Sony Mobile Communications Inc,
+ * and licensed under the license of the file.
+ */
 
 #include <linux/ieee80211.h>
 #include <linux/nl80211.h>

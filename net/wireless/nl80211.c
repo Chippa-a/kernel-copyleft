@@ -3,6 +3,11 @@
  *
  * Copyright 2006-2010	Johannes Berg <johannes@sipsolutions.net>
  */
+/*
+ * NOTE: This file has been modified by Sony Mobile Communications Inc.
+ * Modifications are Copyright (c) 2015 Sony Mobile Communications Inc,
+ * and licensed under the license of the file.
+ */
 
 #include <linux/if.h>
 #include <linux/module.h>
@@ -458,6 +463,14 @@ nl80211_match_policy[NL80211_SCHED_SCAN_MATCH_ATTR_MAX + 1] = {
 	[NL80211_SCHED_SCAN_MATCH_ATTR_SSID] = { .type = NLA_BINARY,
 						 .len = IEEE80211_MAX_SSID_LEN },
 	[NL80211_SCHED_SCAN_MATCH_ATTR_RSSI] = { .type = NLA_U32 },
+};
+
+/* policy for packet pattern attributes */
+static const struct nla_policy
+nl80211_packet_pattern_policy[MAX_NL80211_WOWLAN_PKTPAT + 1] = {
+	[NL80211_WOWLAN_PKTPAT_MASK] = { .type = NLA_BINARY, },
+	[NL80211_WOWLAN_PKTPAT_PATTERN] = { .type = NLA_BINARY, },
+	[NL80211_WOWLAN_PKTPAT_OFFSET] = { .type = NLA_U32 },
 };
 
 static int nl80211_prepare_wdev_dump(struct sk_buff *skb,
@@ -8202,7 +8215,7 @@ static int nl80211_set_wowlan(struct sk_buff *skb, struct genl_info *info)
 		nla_for_each_nested(pat, tb[NL80211_WOWLAN_TRIG_PKT_PATTERN],
 				    rem) {
 			nla_parse(pat_tb, MAX_NL80211_WOWLAN_PKTPAT,
-				  nla_data(pat), nla_len(pat), NULL);
+				  nla_data(pat), nla_len(pat), nl80211_packet_pattern_policy);
 			err = -EINVAL;
 			if (!pat_tb[NL80211_WOWLAN_PKTPAT_MASK] ||
 			    !pat_tb[NL80211_WOWLAN_PKTPAT_PATTERN])
