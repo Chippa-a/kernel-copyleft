@@ -21,7 +21,6 @@
 #include "sdcardfs.h"
 #include <linux/fs_struct.h>
 #include <linux/ratelimit.h>
-#include <linux/sched.h>
 
 const struct cred *override_fsids(struct sdcardfs_sb_info *sbi,
 		struct sdcardfs_inode_data *data)
@@ -772,6 +771,8 @@ static int sdcardfs_getattr(struct vfsmount *mnt, struct dentry *dentry,
 	sdcardfs_copy_and_fix_attrs(d_inode(dentry),
 			      d_inode(lower_path.dentry));
 	err = sdcardfs_fillattr(mnt, d_inode(dentry), &lower_stat, stat);
+	fsstack_copy_inode_size(d_inode(dentry),
+			  d_inode(lower_path.dentry));
 out:
 	sdcardfs_put_lower_path(dentry, &lower_path);
 	return err;

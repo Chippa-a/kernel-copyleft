@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -328,7 +328,7 @@ static int __write_queue(struct vidc_iface_q_info *qinfo, u8 *packet,
 {
 	struct hfi_queue_header *queue;
 	u32 packet_size_in_words, new_write_idx;
-	u32 empty_space, read_idx, write_idx;
+	u32 empty_space, read_idx;
 	u32 *write_ptr;
 
 	if (!qinfo || !packet) {
@@ -351,18 +351,16 @@ static int __write_queue(struct vidc_iface_q_info *qinfo, u8 *packet,
 	}
 
 	packet_size_in_words = (*(u32 *)packet) >> 2;
-	if (!packet_size_in_words || packet_size_in_words >
-		qinfo->q_array.mem_size>>2) {
-		dprintk(VIDC_ERR, "Invalid packet size\n");
+	if (!packet_size_in_words) {
+		dprintk(VIDC_ERR, "Zero packet size\n");
 		return -ENODATA;
 	}
 
 	read_idx = queue->qhdr_read_idx;
-	write_idx = queue->qhdr_write_idx;
 
-	empty_space = (write_idx >=  read_idx) ?
-		((qinfo->q_array.mem_size>>2) - (write_idx -  read_idx)) :
-		(read_idx - write_idx);
+	empty_space = (queue->qhdr_write_idx >=  read_idx) ?
+		(queue->qhdr_q_size - (queue->qhdr_write_idx -  read_idx)) :
+		(read_idx - queue->qhdr_write_idx);
 	if (empty_space <= packet_size_in_words) {
 		queue->qhdr_tx_req =  1;
 		dprintk(VIDC_ERR, "Insufficient size (%d) to write (%d)\n",
@@ -372,20 +370,13 @@ static int __write_queue(struct vidc_iface_q_info *qinfo, u8 *packet,
 
 	queue->qhdr_tx_req =  0;
 
-	new_write_idx = write_idx + packet_size_in_words;
+	new_write_idx = (queue->qhdr_write_idx + packet_size_in_words);
 	write_ptr = (u32 *)((qinfo->q_array.align_virtual_addr) +
-			(write_idx << 2));
-	if (write_ptr < (u32 *)qinfo->q_array.align_virtual_addr ||
-	    write_ptr > (u32 *)(qinfo->q_array.align_virtual_addr +
-	    qinfo->q_array.mem_size)) {
-		dprintk(VIDC_ERR, "Invalid write index");
-		return -ENODATA;
-	}
-
-	if (new_write_idx < (qinfo->q_array.mem_size >> 2)) {
+		(queue->qhdr_write_idx << 2));
+	if (new_write_idx < queue->qhdr_q_size) {
 		memcpy(write_ptr, packet, packet_size_in_words << 2);
 	} else {
-		new_write_idx -= qinfo->q_array.mem_size >> 2;
+		new_write_idx -= queue->qhdr_q_size;
 		memcpy(write_ptr, packet, (packet_size_in_words -
 			new_write_idx) << 2);
 		memcpy((void *)qinfo->q_array.align_virtual_addr,
@@ -477,8 +468,7 @@ static int __read_queue(struct vidc_iface_q_info *qinfo, u8 *packet,
 	u32 packet_size_in_words, new_read_idx;
 	u32 *read_ptr;
 	u32 receive_request = 0;
-	u32 read_idx, write_idx;
-	int rc = 0;
+		int rc = 0;
 
 	if (!qinfo || !packet || !pb_tx_req_is_set) {
 		dprintk(VIDC_ERR, "Invalid Params\n");
@@ -509,16 +499,8 @@ static int __read_queue(struct vidc_iface_q_info *qinfo, u8 *packet,
 	if (queue->qhdr_type & HFI_Q_ID_CTRL_TO_HOST_MSG_Q)
 		receive_request = 1;
 
-	read_idx = queue->qhdr_read_idx;
-	write_idx = queue->qhdr_write_idx;
-
-	if (read_idx == write_idx) {
+	if (queue->qhdr_read_idx == queue->qhdr_write_idx) {
 		queue->qhdr_rx_req = receive_request;
-		/*
-		* mb() to ensure qhdr is updated in main memory
-		* so that venus reads the updated header values
-		*/
-		mb();
 		*pb_tx_req_is_set = 0;
 		dprintk(VIDC_DBG,
 			"%s queue is empty, rx_req = %u, tx_req = %u, read_idx = %u\n",
@@ -529,28 +511,21 @@ static int __read_queue(struct vidc_iface_q_info *qinfo, u8 *packet,
 	}
 
 	read_ptr = (u32 *)((qinfo->q_array.align_virtual_addr) +
-				(read_idx << 2));
-	if (read_ptr < (u32 *)qinfo->q_array.align_virtual_addr ||
-	    read_ptr > (u32 *)(qinfo->q_array.align_virtual_addr +
-	    qinfo->q_array.mem_size - sizeof(*read_ptr))) {
-		dprintk(VIDC_ERR, "Invalid read index\n");
-		return -ENODATA;
-	}
-
+				(queue->qhdr_read_idx << 2));
 	packet_size_in_words = (*read_ptr) >> 2;
 	if (!packet_size_in_words) {
 		dprintk(VIDC_ERR, "Zero packet size\n");
 		return -ENODATA;
 	}
 
-	new_read_idx = read_idx + packet_size_in_words;
-	if (((packet_size_in_words << 2) <= VIDC_IFACEQ_VAR_HUGE_PKT_SIZE) &&
-		read_idx <= (qinfo->q_array.mem_size >> 2)) {
-		if (new_read_idx < (qinfo->q_array.mem_size >> 2)) {
+	new_read_idx = queue->qhdr_read_idx + packet_size_in_words;
+	if (((packet_size_in_words << 2) <= VIDC_IFACEQ_VAR_HUGE_PKT_SIZE)
+			&& queue->qhdr_read_idx <= queue->qhdr_q_size) {
+		if (new_read_idx < queue->qhdr_q_size) {
 			memcpy(packet, read_ptr,
 					packet_size_in_words << 2);
 		} else {
-			new_read_idx -= (qinfo->q_array.mem_size >> 2);
+			new_read_idx -= queue->qhdr_q_size;
 			memcpy(packet, read_ptr,
 			(packet_size_in_words - new_read_idx) << 2);
 			memcpy(packet + ((packet_size_in_words -
@@ -561,23 +536,18 @@ static int __read_queue(struct vidc_iface_q_info *qinfo, u8 *packet,
 	} else {
 		dprintk(VIDC_WARN,
 			"BAD packet received, read_idx: %#x, pkt_size: %d\n",
-			read_idx, packet_size_in_words << 2);
+			queue->qhdr_read_idx, packet_size_in_words << 2);
 		dprintk(VIDC_WARN, "Dropping this packet\n");
-		new_read_idx = write_idx;
+		new_read_idx = queue->qhdr_write_idx;
 		rc = -ENODATA;
 	}
 
-	if (new_read_idx != write_idx)
+	queue->qhdr_read_idx = new_read_idx;
+
+	if (queue->qhdr_read_idx != queue->qhdr_write_idx)
 		queue->qhdr_rx_req = 0;
 	else
 		queue->qhdr_rx_req = receive_request;
-	/*
-	* mb() to ensure qhdr is updated in main memory
-	* so that venus reads the updated header values
-	*/
-	mb();
-
-	queue->qhdr_read_idx = new_read_idx;
 
 	*pb_tx_req_is_set = (1 == queue->qhdr_tx_req) ? 1 : 0;
 
@@ -3313,6 +3283,8 @@ static void venus_hfi_pm_handler(struct work_struct *work)
 	const int max_tries = 5;
 	struct venus_hfi_device *device = list_first_entry(
 			&hal_ctxt.dev_head, struct venus_hfi_device, list);
+	char msg[SUBSYS_CRASH_REASON_LEN];
+
 	if (!device) {
 		dprintk(VIDC_ERR, "%s: NULL device\n", __func__);
 		return;
@@ -3326,6 +3298,9 @@ static void venus_hfi_pm_handler(struct work_struct *work)
 		dprintk(VIDC_WARN, "Failed to PC for %d times\n",
 				device->skip_pc_count);
 		device->skip_pc_count = 0;
+		snprintf(msg, sizeof(msg),
+			"Failed to prepare for PC, rc : %d\n", rc);
+		subsystem_crash_reason("venus", msg);
 		__process_fatal_error(device);
 		return;
 	}
@@ -3404,6 +3379,15 @@ exit:
 	return;
 }
 
+static void venus_hfi_crash_reason(struct hfi_sfr_struct *vsfr)
+{
+	char msg[SUBSYS_CRASH_REASON_LEN];
+
+	snprintf(msg, sizeof(msg), "SFR Message from FW : %s",
+						vsfr->rg_data);
+	subsystem_crash_reason("venus", msg);
+}
+
 static void __process_sys_error(struct venus_hfi_device *device)
 {
 	struct hfi_sfr_struct *vsfr = NULL;
@@ -3428,6 +3412,7 @@ static void __process_sys_error(struct venus_hfi_device *device)
 
 		dprintk(VIDC_ERR, "SFR Message from FW: %s\n",
 				vsfr->rg_data);
+		venus_hfi_crash_reason(vsfr);
 	}
 }
 
@@ -3525,10 +3510,11 @@ static int __response_handler(struct venus_hfi_device *device)
 			}
 		};
 
-		if (vsfr)
+		if (vsfr) {
 			dprintk(VIDC_ERR, "SFR Message from FW: %s\n",
 					vsfr->rg_data);
-
+			venus_hfi_crash_reason(vsfr);
+		}
 		dprintk(VIDC_ERR, "Received watchdog timeout\n");
 		packets[packet_count++] = info;
 		goto exit;

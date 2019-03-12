@@ -2557,6 +2557,30 @@ static int gsi_bind(struct usb_configuration *c, struct usb_function *f)
 
 	switch (gsi->prot_id) {
 	case IPA_USB_RNDIS:
+		/* "Wireless" RNDIS6; auto-detected by Windows */
+		pr_debug("%s: linux_support=%d\n",  __func__,
+							gsi->linux_support);
+		if (gsi->linux_support) {
+			pr_info("%s: RNDIS5\n",  __func__);
+			rndis_gsi_control_intf.bInterfaceClass =
+						USB_CLASS_WIRELESS_CONTROLLER;
+			rndis_gsi_control_intf.bInterfaceSubClass = 0x01;
+			rndis_gsi_control_intf.bInterfaceProtocol = 0x03;
+			rndis_gsi_iad_descriptor.bFunctionClass =
+						USB_CLASS_WIRELESS_CONTROLLER;
+			rndis_gsi_iad_descriptor.bFunctionSubClass = 0x01;
+			rndis_gsi_iad_descriptor.bFunctionProtocol = 0x03;
+		} else {
+			pr_info("%s: RNDIS6\n",  __func__);
+			rndis_gsi_control_intf.bInterfaceClass = USB_CLASS_MISC;
+			rndis_gsi_control_intf.bInterfaceSubClass = 0x04;
+			rndis_gsi_control_intf.bInterfaceProtocol = 0x01;
+			rndis_gsi_iad_descriptor.bFunctionClass =
+								USB_CLASS_MISC;
+			rndis_gsi_iad_descriptor.bFunctionSubClass = 0x04;
+			rndis_gsi_iad_descriptor.bFunctionProtocol = 0x01;
+		}
+
 		info.string_defs = rndis_gsi_string_defs;
 		info.ctrl_desc = &rndis_gsi_control_intf;
 		info.ctrl_str_idx = 0;
@@ -2843,13 +2867,16 @@ static void gsi_unbind(struct usb_configuration *c, struct usb_function *f)
 	if (gsi->prot_id == IPA_USB_MBIM)
 		mbim_gsi_ext_config_desc.function.subCompatibleID[0] = 0;
 
-	if (gadget_is_superspeed(c->cdev->gadget))
+	if (gadget_is_superspeed(c->cdev->gadget)) {
 		usb_free_descriptors(f->ss_descriptors);
-
-	if (gadget_is_dualspeed(c->cdev->gadget))
+		f->ss_descriptors = NULL;
+	}
+	if (gadget_is_dualspeed(c->cdev->gadget)) {
 		usb_free_descriptors(f->hs_descriptors);
-
+		f->hs_descriptors = NULL;
+	}
 	usb_free_descriptors(f->fs_descriptors);
+	f->fs_descriptors = NULL;
 
 	if (gsi->c_port.notify) {
 		kfree(gsi->c_port.notify_req->buf);
@@ -2940,6 +2967,8 @@ static struct f_gsi *gsi_function_init(enum ipa_usb_teth_prot prot_id)
 	gsi->prot_id = prot_id;
 
 	gsi->d_port.ipa_usb_wq = ipa_usb_wq;
+
+	gsi->linux_support = false;
 
 	ret = gsi_function_ctrl_port_init(gsi);
 	if (ret) {
@@ -3107,6 +3136,51 @@ static ssize_t gsi_info_show(struct config_item *item, char *page)
 	return ret;
 }
 
+static ssize_t gsi_linux_support_show(struct config_item *item, char *page)
+{
+	struct f_gsi *gsi = to_gsi_opts(item)->gsi;
+	int ret;
+
+	switch (gsi->prot_id) {
+	case IPA_USB_RNDIS:
+		/* "Y\n\0" 3characters */
+		ret = snprintf(page, 3, "%c\n", gsi->linux_support ? 'Y' : 'N');
+		break;
+	default:
+		ret = EBADR;
+		break;
+	}
+
+	return ret;
+}
+
+static ssize_t gsi_linux_support_store(struct config_item *item,
+						 const char *page, size_t len)
+{
+	struct f_gsi *gsi = to_gsi_opts(item)->gsi;
+	bool val;
+	int ret = 0;
+
+	switch (gsi->prot_id) {
+	case IPA_USB_RNDIS:
+		ret = strtobool(page, &val);
+		if (ret)
+			break;
+		gsi->linux_support = val;
+		pr_info("%s: set linux_support=%d.\n",  __func__,
+							gsi->linux_support);
+		break;
+	default:
+		ret = -EBADR;
+		break;
+	}
+
+	if (ret)
+		len = ret;
+	return len;
+}
+
+CONFIGFS_ATTR(gsi_, linux_support);
 CONFIGFS_ATTR_RO(gsi_, info);
 
 static ssize_t gsi_rndis_wceis_show(struct config_item *item, char *page)
@@ -3147,6 +3221,7 @@ static struct config_item_type gsi_func_rndis_type = {
 
 static struct configfs_attribute *gsi_attrs[] = {
 	&gsi_attr_info,
+	&gsi_attr_linux_support,
 	NULL,
 };
 
