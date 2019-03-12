@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2015, 2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -8,6 +8,11 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
+ */
+/*
+ * NOTE: This file has been modified by Sony Mobile Communications Inc.
+ * Modifications are Copyright (c) 2016 Sony Mobile Communications Inc,
+ * and licensed under the license of the file.
  */
 
 #include <soc/qcom/ramdump.h>
@@ -92,6 +97,9 @@ struct wcd_cpe_ssr_entry {
 	int offline;
 	u32 offline_change;
 	wait_queue_head_t offline_poll_wait;
+	int err_status;
+	int err_data_ready;
+	wait_queue_head_t err_status_debug_q;
 	struct snd_info_entry *entry;
 };
 
@@ -168,6 +176,9 @@ struct wcd_cpe_core {
 
 	/* mutex to protect cpe ssr status variables */
 	struct mutex ssr_lock;
+
+	/* mutex to protect cpe session status variables */
+	struct mutex session_lock;
 
 	/* Store the calibration data needed for cpe */
 	struct cal_type_data *cal_data[WCD_CPE_LSM_CAL_MAX];

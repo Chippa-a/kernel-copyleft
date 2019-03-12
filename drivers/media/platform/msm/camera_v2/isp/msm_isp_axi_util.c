@@ -9,6 +9,11 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
+/*
+ * NOTE: This file has been modified by Sony Mobile Communications Inc.
+ * Modifications are Copyright (c) 2014 Sony Mobile Communications Inc,
+ * and licensed under the license of the file.
+ */
 #include <linux/io.h>
 #include <media/v4l2-subdev.h>
 #include <asm/div64.h>
@@ -3160,6 +3165,12 @@ static int msm_isp_stop_axi_stream(struct vfe_device *vfe_dev,
 				vfe_dev->buf_mgr, vfe_dev->pdev->id,
 				bufq_handle, MSM_ISP_BUFFER_FLUSH_ALL,
 				&timestamp.buf_time, 0);
+#if defined(CONFIG_SONY_CAM_V4L2)
+			if (rc < 0) {
+				pr_err("%s: flush_buf: rc %d\n",
+					__func__, rc);
+			}
+#endif
 			if (rc == -EFAULT) {
 				msm_isp_halt_send_error(vfe_dev,
 					ISP_EVENT_BUF_FATAL_ERROR);
@@ -3196,6 +3207,10 @@ int msm_isp_cfg_axi_stream(struct vfe_device *vfe_dev, void *arg)
 
 		rc = msm_isp_start_axi_stream(
 			vfe_dev, stream_cfg_cmd, camif_update);
+#if defined(CONFIG_SONY_CAM_V4L2)
+		pr_info("%s: msm_isp_start_axi_stream: rc %d\n",
+			__func__, rc);
+#endif
 	} else {
 		rc = msm_isp_stop_axi_stream(
 			vfe_dev, stream_cfg_cmd, camif_update, halt);
@@ -3213,13 +3228,23 @@ int msm_isp_cfg_axi_stream(struct vfe_device *vfe_dev, void *arg)
 		ret = msm_isp_update_dual_HW_ms_info_at_stop(
 			vfe_dev, stream_cfg_cmd, camif_update);
 		if (ret < 0)
+#if defined(CONFIG_SONY_CAM_V4L2)
+			pr_warn("%s: Warning! Update dual_cam failed: ret %d\n",
+				__func__, ret);
+#else
 			pr_warn("%s: Warning! Update dual_cam failed\n",
 				__func__);
+#endif
 	}
 
 	if (rc < 0)
+#if defined(CONFIG_SONY_CAM_V4L2)
+		pr_err("%s: start/stop %d stream failed: rc %d\n", __func__,
+			stream_cfg_cmd->cmd, rc);
+#else
 		pr_err("%s: start/stop %d stream failed\n", __func__,
 			stream_cfg_cmd->cmd);
+#endif
 	return rc;
 }
 
@@ -3739,10 +3764,12 @@ int msm_isp_update_axi_stream(struct vfe_device *vfe_dev, void *arg)
 				&update_cmd->update_info[i];
 			stream_info = &axi_data->stream_info[HANDLE_TO_IDX(
 				update_info->stream_handle)];
+			mutex_lock(&vfe_dev->buf_mgr->lock);
 			rc = msm_isp_request_frame(vfe_dev, stream_info,
 				update_info->user_stream_id,
 				update_info->frame_id,
 				MSM_ISP_INVALID_BUF_INDEX);
+			mutex_unlock(&vfe_dev->buf_mgr->lock);
 			if (rc)
 				pr_err("%s failed to request frame!\n",
 					__func__);
@@ -3814,10 +3841,12 @@ int msm_isp_update_axi_stream(struct vfe_device *vfe_dev, void *arg)
 		}
 		stream_info = &axi_data->stream_info[HANDLE_TO_IDX(
 				req_frm->stream_handle)];
+		mutex_lock(&vfe_dev->buf_mgr->lock);
 		rc = msm_isp_request_frame(vfe_dev, stream_info,
 			req_frm->user_stream_id,
 			req_frm->frame_id,
 			req_frm->buf_index);
+		mutex_unlock(&vfe_dev->buf_mgr->lock);
 		if (rc)
 			pr_err("%s failed to request frame!\n",
 				__func__);
